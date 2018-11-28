@@ -21,12 +21,10 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
+import android.os.Process;
 import android.preference.PreferenceManager;
 import android.text.TextUtils;
 import android.util.Log;
-import android.os.Process;
-
-import com.antest1.kcasniffer.R;
 
 import java.io.IOException;
 import java.net.Inet4Address;
@@ -42,7 +40,6 @@ import java.util.Enumeration;
 import java.util.List;
 
 import eu.faircode.netguard.IPUtil;
-import eu.faircode.netguard.Packet;
 import eu.faircode.netguard.ResourceRecord;
 import eu.faircode.netguard.Rule;
 import eu.faircode.netguard.Util;
@@ -410,6 +407,7 @@ public class KcaVpnService extends VpnService {
                 } else if (!socks5_enable) {
                     builder.addAllowedApplication(KC_PACKAGE_NAME);
                 }
+                builder.addAllowedApplication("com.tanck.sendhttp");
             } catch (PackageManager.NameNotFoundException e) {
                 e.printStackTrace();
             }
@@ -514,17 +512,18 @@ public class KcaVpnService extends VpnService {
                 Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
             }
         } else {
-            builder.addRoute("0.0.0.0", 0);
+//            builder.addRoute("0.0.0.0", 0);
         }
 
         Log.i(TAG, "IPv6=" + ip6);
-        if (ip6)
-            builder.addRoute("2000::", 3); // unicast
+//        if (ip6)
+//            builder.addRoute("2000::", 3); // unicast
 
         // MTU
         int mtu = jni_get_mtu();
         Log.i(TAG, "MTU=" + mtu);
         builder.setMtu(mtu);
+        builder.addRoute("0.0.0.0", 0);
 
         return builder;
     }
@@ -601,6 +600,7 @@ public class KcaVpnService extends VpnService {
             jni_socks5("", 0, "", "");
         }
         jni_start(vpn.getFd(), true, rcode, prio);
+
     }
 
     private void stopVPN(ParcelFileDescriptor pfd) {

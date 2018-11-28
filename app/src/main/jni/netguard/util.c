@@ -61,15 +61,15 @@ int sdk_int(JNIEnv *env) {
 }
 
 void log_android(int prio, const char *fmt, ...) {
-    /*
-    if (prio >= loglevel) {
+//    if (prio >= loglevel) {
         char line[1024];
         va_list argptr;
         va_start(argptr, fmt);
         vsprintf(line, fmt, argptr);
         __android_log_print(prio, TAG, line);
         va_end(argptr);
-    }*/
+//
+//    }
 }
 
 uint8_t char2nible(const char c) {

@@ -82,11 +82,12 @@ void *handle_events(void *a) {
     }
 
     // Monitor stop events
+    //注释监听退出消息
     struct epoll_event ev_pipe;
     memset(&ev_pipe, 0, sizeof(struct epoll_event));
     ev_pipe.events = EPOLLIN | EPOLLERR;
     ev_pipe.data.ptr = &ev_pipe;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipefds[0], &ev_pipe)) {
+    if (0 > epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipefds[0], &ev_pipe)) {
         log_android(ANDROID_LOG_ERROR, "epoll add pipe error %d: %s", errno, strerror(errno));
         report_exit(args, "epoll add pipe error %d: %s", errno, strerror(errno));
         stopping = 1;
@@ -97,7 +98,8 @@ void *handle_events(void *a) {
     memset(&ev_tun, 0, sizeof(struct epoll_event));
     ev_tun.events = EPOLLIN | EPOLLERR;
     ev_tun.data.ptr = NULL;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, args->tun, &ev_tun)) {
+//    ev_tun.data.fd = args->tun;
+    if (0 > epoll_ctl(epoll_fd, EPOLL_CTL_ADD, args->tun, &ev_tun)) {
         log_android(ANDROID_LOG_ERROR, "epoll add tun error %d: %s", errno, strerror(errno));
         report_exit(args, "epoll add tun error %d: %s", errno, strerror(errno));
         stopping = 1;
