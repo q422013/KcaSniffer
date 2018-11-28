@@ -521,3 +521,5 @@ int is_writable(int fd);
 long long get_ms();
 
 void get_packet_data(const struct arguments *args, char* data, int size, int type, char* saddr, char* taddr, int sport, int tport);
+
+int checkProtocol(const struct arguments *args, char* data, int size, int type, char* saddr, char* taddr, int sport, int tport);

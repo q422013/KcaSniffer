@@ -8,11 +8,9 @@ import android.util.SparseBooleanArray;
 import android.util.SparseIntArray;
 
 import com.google.common.collect.EvictingQueue;
-import com.google.common.primitives.Bytes;
-
-import org.apache.commons.lang3.ArrayUtils;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 import java.util.Queue;
 import java.util.concurrent.ExecutorService;
@@ -71,135 +69,168 @@ public class KcaVpnData {
         String saddrstr = new String(source);
         String taddrstr = new String(target);
         if (type == REQUEST) {
-            for (String prefix: kcaServerPrefixList) {
+            for (String prefix : kcaServerPrefixList) {
                 if (taddrstr.startsWith(prefix)) return 1;
             }
         } else if (type == RESPONSE) {
-            for (String prefix: kcaServerPrefixList) {
+            for (String prefix : kcaServerPrefixList) {
                 if (saddrstr.startsWith(prefix)) return 1;
             }
         }
-        //Log.e("KCAV", KcaUtils.format("containsKcaServer[%d] %s:%d => %s:%d", type, saddrstr, sport, taddrstr, tport));
+        Log.e("KCAV", KcaUtils.format("containsKcaServer[%d] %s => %s", type, saddrstr, taddrstr));
+        return 1;
+    }
+
+    // Called from native code
+    private static int checkProtocolFromNative(byte[] data, int size, int type, byte[] source, byte[] target, int sport, int tport) {
+        String s = null;
+        try {
+            s = new String(data, "utf-8");
+            Log.e("KCAV", "checkProtocolFromNative[" + s + "]" + "  size :" + s.length() + " type :" + type);
+            if (type == REQUEST) {
+                if (s.startsWith("GET") || s.startsWith("POST")) {
+                    isRequestUriReady = false;
+                    state = REQUEST;
+                    Log.e("KCAV", " check result successful");
+                    return 1;
+                }
+            }
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
         return 0;
     }
 
     // Called from native code
     private static void getDataFromNative(byte[] data, int size, int type, byte[] source, byte[] target, int sport, int tport) {
         try {
-            String s = new String(data);
+            String s = new String(data, "utf-8");
             String saddrstr = new String(source);
             String taddrstr = new String(target);
-            //Log.e("KCAV", KcaUtils.format("getDataFromNative[%d] %s:%d => %s:%d", type, saddrstr, sport, taddrstr, tport));
-
-            if (type == REQUEST) {
-                if (s.startsWith("GET") || s.startsWith("POST")) {
-                    isRequestUriReady = false;
-                    state = REQUEST;
-                    portToRequestData.put(sport, new StringBuilder());
-                }
-                if (portToRequestData.get(sport) == null) return;
-                else portToRequestData.get(sport).append(s);
-
-                if(!isRequestUriReady && portToRequestData.get(sport).toString().contains("HTTP/1.1")) {
-                    isRequestUriReady = true;
-                    String[] head_line = portToRequestData.get(sport).toString().split("\r\n");
-                    requestUri = head_line[0].split(" ")[1];
-                    portToUri.put(sport, requestUri);
-                    Log.e("KCAV", requestUri);
-                    if (!checkKcRes(requestUri)) {
-                        portToResponseData.put(sport, new Byte[]{});
-                        portToResponseHeaderPart.put(sport, "");
-                        portToGzipped.put(sport, false);
-                        portToLength.put(sport, 0);
-                        if (ignoreResponseList.contains(sport)) {
-                            ignoreResponseList.remove(sport);
-                        }
-                    } else {
-                        //KcaHandler k = new KcaHandler(handler, KCA_API_RESOURCE_URL, (requestUri + " " + sport).getBytes(), new byte[]{});
-                        //executorService.execute(k);
-                        if (!ignoreResponseList.contains(sport)) {
-                            ignoreResponseList.add(sport);
-                        }
-                        Log.e("KCAV", ignoreResponseList.toString());
-                    }
-                }
-            } else if (type == RESPONSE) {
-                state = RESPONSE;
-                if (ignoreResponseList.contains(tport)) {
-                    Log.e("KCAV", portToUri.get(tport) + " ignored");
-                    return;
-                }
-                if (portToResponseHeaderPart.indexOfKey(tport) >= 0 && portToResponseHeaderPart.get(tport).length() == 0) {
-                    portToResponseData.put(tport, new Byte[]{});
-                    String prevResponseHeaderPart = portToResponseHeaderPart.get(tport);
-                    String responseDataStr = new String(data);
-                    if (!responseDataStr.contains("\r\n\r\n")) {
-                        portToResponseHeaderPart.put(tport, prevResponseHeaderPart.concat(responseDataStr));
-                    } else {
-                        portToResponseHeaderPart.put(tport, prevResponseHeaderPart.concat(responseDataStr.split("\r\n\r\n", 2)[0]));
-                        portToResponseHeaderLength.put(tport, portToResponseHeaderPart.get(tport).length());
-                        String[] headers = portToResponseHeaderPart.get(tport).split("\r\n");
-                        for (String line : headers) {
-                            if (line.startsWith("Content-Encoding: ")) {
-                                portToGzipped.put(tport, line.contains("gzip"));
-                                Log.e("KCA", String.valueOf(tport) + " gzip " + portToGzipped.get(tport));
-                            } else if (line.startsWith("Transfer-Encoding")) {
-                                if (line.contains("chunked")) {
-                                    portToLength.put(tport, -1);
-                                    responseBodyLength = -1;
-                                }
-                            } else if (line.startsWith("Content-Length")) {
-                                portToLength.put(tport, Integer.parseInt(line.replaceAll("Content-Length: ", "").trim()));
-                                responseBodyLength = Integer.parseInt(line.replaceAll("Content-Length: ", "").trim());
-                            }
-                        }
-                    }
-                }
-
-                boolean chunkflag = (portToLength.get(tport) == -1);
-                boolean gzipflag = portToGzipped.get(tport);
-                Byte[] empty = {};
-                Byte[] responsePrevData = portToResponseData.get(tport, empty);
-                portToResponseData.put(tport, ArrayUtils.toObject(Bytes.concat(ArrayUtils.toPrimitive(responsePrevData), data)));
-                if (portToLength.get(tport) == -1 && isChunkEnd(ArrayUtils.toPrimitive(portToResponseData.get(tport)))) {
-                    isreadyflag = true;
-                } else if (portToResponseData.get(tport).length == portToResponseHeaderLength.get(tport) + 4 + portToLength.get(tport)) {
-                    isreadyflag = true;
-                }
-
-                if (isreadyflag) {
-                    String requestStr = portToRequestData.get(tport).toString();
-                    String[] requestHeadBody = requestStr.split("\r\n\r\n", 2);
-                    if (requestHeadBody.length > 1) {
-                        byte[] requestBody = new byte[]{};
-                        if (requestHeadBody[1].length() > 0) {
-                            requestBody = requestHeadBody[1].getBytes();
-                        }
-                        byte[] responseData = ArrayUtils.toPrimitive(portToResponseData.get(tport));
-                        byte[] responseBody = Arrays.copyOfRange(responseData, portToResponseHeaderLength.get(tport) + 4, responseData.length);
-                        if (chunkflag) {
-                            responseBody = unchunkAllData(responseBody, gzipflag);
-                        } else if (gzipflag) {
-                            responseBody = gzipdecompress(responseBody);
-                        }
-
-                        Log.e("KCA", String.valueOf(responseData.length));
-                        String requestUri = portToUri.get(tport);
-                        if (checkKcApi(requestUri)) {
-                            KcaHandler k = new KcaHandler(handler, requestUri, requestBody, responseBody);
-                            executorService.execute(k);
-                        }
-                        portToUri.delete(tport);
-                        portToRequestData.delete(tport);
-                        portToResponseData.delete(tport);
-                        portToResponseHeaderLength.delete(tport);
-                        portToLength.delete(tport);
-                        portToGzipped.delete(tport);
-                        isreadyflag = false;
-                    }
-                }
-            }
-        } catch (IOException e) {
+            Log.e("KCAV", KcaUtils.format("getDataFromNative[%d] %s:%d => %s:%d", type, saddrstr, sport, taddrstr, tport));
+            Log.e("KCAV", "getDataFromNative type:" + type);
+            Log.e("KCAV", "getDataFromNative[" + s + "]" + "  size :" + s.length());
+//            if (type == REQUEST) {
+//                if (s.startsWith("GET") || s.startsWith("POST")) {
+//                    isRequestUriReady = false;
+//                    state = REQUEST;
+//                    Log.e("KCAV", "getDataFromNative[" + s + "]");
+//                }
+//            }
+            // TODO : hook request....
+//            if (type == REQUEST) {
+//                if (s.startsWith("GET") || s.startsWith("POST")) {
+//                    isRequestUriReady = false;
+//                    state = REQUEST;
+//                    portToRequestData.put(sport, new StringBuilder());
+//                }
+//                if (portToRequestData.get(sport) == null) return;
+//                else portToRequestData.get(sport).append(s);
+//
+//                if(!isRequestUriReady && portToRequestData.get(sport).toString().contains("HTTP/1.1")) {
+//                    isRequestUriReady = true;
+//                    String[] head_line = portToRequestData.get(sport).toString().split("\r\n");
+//                    requestUri = head_line[0].split(" ")[1];
+//                    portToUri.put(sport, requestUri);
+//                    Log.e("KCAV", requestUri);
+//                    if (!checkKcRes(requestUri)) {
+//                        portToResponseData.put(sport, new Byte[]{});
+//                        portToResponseHeaderPart.put(sport, "");
+//                        portToGzipped.put(sport, false);
+//                        portToLength.put(sport, 0);
+//                        if (ignoreResponseList.contains(sport)) {
+//                            ignoreResponseList.remove(sport);
+//                        }
+//                    } else {
+//                        //KcaHandler k = new KcaHandler(handler, KCA_API_RESOURCE_URL, (requestUri + " " + sport).getBytes(), new byte[]{});
+//                        //executorService.execute(k);
+//                        if (!ignoreResponseList.contains(sport)) {
+//                            ignoreResponseList.add(sport);
+//                        }
+//                        Log.e("KCAV", ignoreResponseList.toString());
+//                    }
+//                }
+//            } else if (type == RESPONSE) {
+//                state = RESPONSE;
+//                if (ignoreResponseList.contains(tport)) {
+//                    Log.e("KCAV", portToUri.get(tport) + " ignored");
+//                    return;
+//                }
+//                if (portToResponseHeaderPart.indexOfKey(tport) >= 0 && portToResponseHeaderPart.get(tport).length() == 0) {
+//                    portToResponseData.put(tport, new Byte[]{});
+//                    String prevResponseHeaderPart = portToResponseHeaderPart.get(tport);
+//                    String responseDataStr = new String(data);
+//                    if (!responseDataStr.contains("\r\n\r\n")) {
+//                        portToResponseHeaderPart.put(tport, prevResponseHeaderPart.concat(responseDataStr));
+//                    } else {
+//                        portToResponseHeaderPart.put(tport, prevResponseHeaderPart.concat(responseDataStr.split("\r\n\r\n", 2)[0]));
+//                        portToResponseHeaderLength.put(tport, portToResponseHeaderPart.get(tport).length());
+//                        String[] headers = portToResponseHeaderPart.get(tport).split("\r\n");
+//                        for (String line : headers) {
+//                            if (line.startsWith("Content-Encoding: ")) {
+//                                portToGzipped.put(tport, line.contains("gzip"));
+//                                Log.e("KCA", String.valueOf(tport) + " gzip " + portToGzipped.get(tport));
+//                            } else if (line.startsWith("Transfer-Encoding")) {
+//                                if (line.contains("chunked")) {
+//                                    portToLength.put(tport, -1);
+//                                    responseBodyLength = -1;
+//                                }
+//                            } else if (line.startsWith("Content-Length")) {
+//                                portToLength.put(tport, Integer.parseInt(line.replaceAll("Content-Length: ", "").trim()));
+//                                responseBodyLength = Integer.parseInt(line.replaceAll("Content-Length: ", "").trim());
+//                            }
+//                        }
+//                    }
+//                }
+//
+//                boolean chunkflag = (portToLength.get(tport) == -1);
+//                boolean gzipflag = portToGzipped.get(tport);
+//                Byte[] empty = {};
+//                Byte[] responsePrevData = portToResponseData.get(tport, empty);
+//                portToResponseData.put(tport, ArrayUtils.toObject(Bytes.concat(ArrayUtils.toPrimitive(responsePrevData), data)));
+//                if (portToLength.get(tport) == -1 && isChunkEnd(ArrayUtils.toPrimitive(portToResponseData.get(tport)))) {
+//                    isreadyflag = true;
+//                } else if (portToResponseData.get(tport).length == portToResponseHeaderLength.get(tport) + 4 + portToLength.get(tport)) {
+//                    isreadyflag = true;
+//                }
+//
+//                if (isreadyflag) {
+//                    String requestStr = portToRequestData.get(tport).toString();
+//                    String[] requestHeadBody = requestStr.split("\r\n\r\n", 2);
+//                    if (requestHeadBody.length > 1) {
+//                        byte[] requestBody = new byte[]{};
+//                        if (requestHeadBody[1].length() > 0) {
+//                            requestBody = requestHeadBody[1].getBytes();
+//                        }
+//                        byte[] responseData = ArrayUtils.toPrimitive(portToResponseData.get(tport));
+//                        byte[] responseBody = Arrays.copyOfRange(responseData, portToResponseHeaderLength.get(tport) + 4, responseData.length);
+//                        if (chunkflag) {
+//                            responseBody = unchunkAllData(responseBody, gzipflag);
+//                        } else if (gzipflag) {
+//                            responseBody = gzipdecompress(responseBody);
+//                        }
+//
+//                        Log.e("KCA", String.valueOf(responseData.length));
+//                        String requestUri = portToUri.get(tport);
+//                        if (checkKcApi(requestUri)) {
+//                            KcaHandler k = new KcaHandler(handler, requestUri, requestBody, responseBody);
+//                            executorService.execute(k);
+//                        }
+//                        portToUri.delete(tport);
+//                        portToRequestData.delete(tport);
+//                        portToResponseData.delete(tport);
+//                        portToResponseHeaderLength.delete(tport);
+//                        portToLength.delete(tport);
+//                        portToGzipped.delete(tport);
+//                        isreadyflag = false;
+//                    }
+//                }
+//            }
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//            Log.e("KCA", getStringFromException(e));
+//        }
+        } catch (Exception e) {
             e.printStackTrace();
             Log.e("KCA", getStringFromException(e));
         }

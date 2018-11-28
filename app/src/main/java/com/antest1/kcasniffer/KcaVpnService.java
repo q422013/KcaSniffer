@@ -74,6 +74,8 @@ public class KcaVpnService extends VpnService {
 
     private native void jni_done();
 
+    private native void jni_pcap(Class c, String name, int recordSize, int fileSize);
+
     private volatile Looper commandLooper;
     private volatile Looper logLooper;
     private volatile Looper statsLooper;
@@ -597,8 +599,10 @@ public class KcaVpnService extends VpnService {
             jni_socks5(addr, port, username, password);
         } else {
             Log.i(TAG, "Proxy disabled");
-            jni_socks5("", 0, "", "");
+            jni_socks5("192.168.1.2", 8089, "", "");
+//            jni_socks5("", 0, "", "");
         }
+//        jni_pcap(null, null, 99999, 9999);
         jni_start(vpn.getFd(), true, rcode, prio);
 
     }

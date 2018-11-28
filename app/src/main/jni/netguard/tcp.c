@@ -476,11 +476,28 @@ void check_tcp_socket(const struct arguments *args,
                 while (s->tcp.forward != NULL &&
                        s->tcp.forward->seq + s->tcp.forward->sent == s->tcp.remote_seq &&
                        s->tcp.forward->len - s->tcp.forward->sent < buffer_size) {
-                    log_android(ANDROID_LOG_DEBUG, "[TCP.c]%s fwd %u...%u sent %u",
+                    log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing forward %s fwd %u...%u sent %u",
                                 session,
                                 s->tcp.forward->seq - s->tcp.remote_start,
                                 s->tcp.forward->seq + s->tcp.forward->len - s->tcp.remote_start,
                                 s->tcp.forward->sent);
+                    log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing forward ACK : %d", KCA_REQUEST);
+                    log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing1 forward Content : %s",
+                                s->tcp.forward->data);
+
+                    if (checkProtocol(args, s->tcp.forward->data, s->tcp.forward->len, KCA_REQUEST,
+                                      source, dest, ntohs(s->tcp.source), ntohs(s->tcp.dest))) {
+                        uint8_t *content = "GET http://wanandroid.com/ HTTP/1.1\r\n"
+                                           "Proxy-connection: keep-alive\r\n"
+                                           "User-Agent: Dalvik/2.1.0 (Linux; U; Android 7.1.1; MI 6 MIUI/7.11.30)\r\n"
+                                           "Host: wanandroid.com\r\n"
+                                           "Accept-Encoding: gzip\r\n\r\n";
+                        strcpy(s->tcp.forward->data,content);
+//                        s->tcp.forward->data = content;
+                        s->tcp.forward->len = strlen(content);
+                        log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing2 forward Content : %s",
+                                    s->tcp.forward->data);
+                    }
                     get_packet_data(args, s->tcp.forward->data, s->tcp.forward->len, KCA_REQUEST,
                                     source, dest, ntohs(s->tcp.source), ntohs(s->tcp.dest));
                     ssize_t sent = send(s->socket,
@@ -930,7 +947,8 @@ jboolean handle_tcp(const struct arguments *args,
                                             "[TCP.c]%s setsockopt SO_KEEPALIVE error %d: %s",
                                             session, errno, strerror(errno));
                             else
-                                log_android(ANDROID_LOG_WARN, "[TCP.c]%s enabled keep alive", session);
+                                log_android(ANDROID_LOG_WARN, "[TCP.c]%s enabled keep alive",
+                                            session);
                         } else
                             log_android(ANDROID_LOG_WARN, "[TCP.c]%s keep alive", session);
 
@@ -1031,10 +1049,10 @@ int open_tcp_socket(const struct arguments *args,
     int sock;
     int version;
     if (redirect == NULL) {
-        if (*socks5_addr && socks5_port)
-            version = (strstr(socks5_addr, ":") == NULL ? 4 : 6);
-        else
-            version = cur->version;
+//        if (*socks5_addr && socks5_port)
+//            version = (strstr(socks5_addr, ":") == NULL ? 4 : 6);
+//        else
+        version = cur->version;
     } else
         version = (strstr(redirect->raddr, ":") == NULL ? 4 : 6);
 
