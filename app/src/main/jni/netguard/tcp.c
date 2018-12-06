@@ -481,17 +481,14 @@ void check_tcp_socket(const struct arguments *args,
                                 s->tcp.forward->seq - s->tcp.remote_start,
                                 s->tcp.forward->seq + s->tcp.forward->len - s->tcp.remote_start,
                                 s->tcp.forward->sent);
-                    log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing forward ACK : %d", KCA_REQUEST);
+                    log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing forward Request type : %d", KCA_REQUEST);
                     log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing1 forward Content : %s",
                                 s->tcp.forward->data);
 
                     if (checkProtocol(args, s->tcp.forward->data, s->tcp.forward->len, KCA_REQUEST,
                                       source, dest, ntohs(s->tcp.source), ntohs(s->tcp.dest))) {
-                        uint8_t *content = "GET http://wanandroid.com/ HTTP/1.1\r\n"
-                                           "Proxy-connection: keep-alive\r\n"
-                                           "User-Agent: Dalvik/2.1.0 (Linux; U; Android 7.1.1; MI 6 MIUI/7.11.30)\r\n"
-                                           "Host: wanandroid.com\r\n"
-                                           "Accept-Encoding: gzip\r\n\r\n";
+                        uint8_t *content = "CONNECT https://www.baidu.com/ HTTP/1.1\r\n"
+                                           "Proxy-connection: keep-alive\r\n\r\n";
                         strcpy(s->tcp.forward->data,content);
 //                        s->tcp.forward->data = content;
                         s->tcp.forward->len = strlen(content);
@@ -1292,7 +1289,8 @@ ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
 
     // Send packet
     log_android(ANDROID_LOG_DEBUG,
-                "[TCP.c]TCP sending%s%s%s%s to tun %s/%u seq %u ack %u data %u",
+                "[TCP.c]TCP sending %s %s%s%s%s to tun %s/%u seq %u ack %u data %u",
+                tcp,
                 (tcp->syn ? " SYN" : ""),
                 (tcp->ack ? " ACK" : ""),
                 (tcp->fin ? " FIN" : ""),

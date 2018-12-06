@@ -88,7 +88,7 @@ public class KcaVpnData {
             s = new String(data, "utf-8");
             Log.e("KCAV", "checkProtocolFromNative[" + s + "]" + "  size :" + s.length() + " type :" + type);
             if (type == REQUEST) {
-                if (s.startsWith("GET") || s.startsWith("POST")) {
+                if (s.startsWith("wwww.baidu.com") || s.startsWith("POST")) {
                     isRequestUriReady = false;
                     state = REQUEST;
                     Log.e("KCAV", " check result successful");
