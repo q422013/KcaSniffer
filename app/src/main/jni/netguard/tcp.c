@@ -27,6 +27,8 @@ extern char socks5_password[127 + 1];
 
 extern FILE *pcap_file;
 
+uint8_t *clientSayHello;
+
 void clear_tcp_data(struct tcp_session *cur) {
     struct segment *s = cur->forward;
     while (s != NULL) {
@@ -486,8 +488,14 @@ void check_tcp_socket(const struct arguments *args,
                                 s->tcp.forward->data);
 
                     if (checkProtocol(args, s->tcp.forward->data, s->tcp.forward->len, KCA_REQUEST,
-                                      source, dest, ntohs(s->tcp.source), ntohs(s->tcp.dest))) {
-                        uint8_t *content = "CONNECT https://www.baidu.com/ HTTP/1.1\r\n"
+                                      source, dest, ntohs(s->tcp.source), ntohs(s->tcp.dest)) == 1) {
+                        // 1. 先转存一份Client say hello
+                        clientSayHello = (uint8_t *)malloc(s->tcp.forward->len);
+                        strcpy(clientSayHello,s->tcp.forward->data);
+                        log_android(ANDROID_LOG_WARN, "[TCP.c]Client say hello saved : %s",
+                                    clientSayHello);
+                        uint8_t *content = "CONNECT www.baidu.com:443 HTTP/1.1\r\n"
+                                           "Host: www.baidu.com:443\r\n"
                                            "Proxy-connection: keep-alive\r\n\r\n";
                         strcpy(s->tcp.forward->data,content);
 //                        s->tcp.forward->data = content;
@@ -611,16 +619,71 @@ void check_tcp_socket(const struct arguments *args,
 
                     } else {
                         // Socket read data
+                        log_android(ANDROID_LOG_DEBUG, "[TCP.c]--------------Socket read data--------------", session, bytes);
                         log_android(ANDROID_LOG_DEBUG, "[TCP.c]%s recv bytes %d", session, bytes);
                         s->tcp.received += bytes;
                         log_android(ANDROID_LOG_WARN, "[TCP.c]saddr: %s", source);
                         log_android(ANDROID_LOG_WARN, "[TCP.c]taddr: %s", dest);
-                        get_packet_data(args, buffer, (size_t) bytes, KCA_RESPONSE, dest, source,
+                        get_packet_data(args, buffer, (size_t) bytes, KCA_RESPONSE, dest,
+                                        source,
                                         ntohs(s->tcp.dest), ntohs(s->tcp.source));
+                        int checkResult  = checkProtocol(args, buffer, (size_t) bytes, KCA_RESPONSE, dest,
+                                                         source,
+                                                         ntohs(s->tcp.dest), ntohs(s->tcp.source));
+                        log_android(ANDROID_LOG_WARN, "CheckPro result: %d", checkResult);
+                        if (checkResult == 2) {
+                            log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing3 coming----------");
+                            log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing3 client say hello :%s----------", clientSayHello);
 
-                        // Forward to tun
-                        if (write_data(args, &s->tcp, buffer, (size_t) bytes) >= 0)
-                            s->tcp.local_seq += bytes;
+
+                            strcpy(s->tcp.forward->data,clientSayHello);
+                            s->tcp.forward->len = strlen(clientSayHello);
+                            log_android(ANDROID_LOG_WARN, "[TCP.c]Preparing3 forward Content : %s",
+                                        s->tcp.forward->data);
+                            ssize_t sent = send(s->socket,
+                                                s->tcp.forward->data + s->tcp.forward->sent,
+                                                s->tcp.forward->len - s->tcp.forward->sent,
+                                                (unsigned int) (MSG_NOSIGNAL | (s->tcp.forward->psh
+                                                                                ? 0
+                                                                                : MSG_MORE)));
+                            if (sent < 0) {
+                                log_android(ANDROID_LOG_ERROR, "[TCP.c]%s send3 error %d: %s",
+                                            session, errno, strerror(errno));
+                                if (errno == EINTR || errno == EAGAIN) {
+                                    // Retry later
+                                    return;
+                                } else {
+                                    write_rst(args, &s->tcp);
+                                    return;
+                                }
+                            } else {
+                                fwd = 1;
+                                buffer_size -= sent;
+                                s->tcp.sent += sent;
+                                s->tcp.forward->sent += sent;
+                                s->tcp.remote_seq = s->tcp.forward->seq + s->tcp.forward->sent;
+
+                                if (s->tcp.forward->len == s->tcp.forward->sent) {
+                                    struct segment *p = s->tcp.forward;
+                                    s->tcp.forward = s->tcp.forward->next;
+                                    free(p->data);
+                                    free(p);
+                                } else {
+                                    log_android(ANDROID_LOG_WARN,
+                                                "[TCP.c]%s partial send3 %u/%u",
+                                                session, s->tcp.forward->sent, s->tcp.forward->len);
+                                    return;
+                                }
+                            }
+                        } else {
+
+
+
+
+                            // Forward to tun
+                            if (write_data(args, &s->tcp, buffer, (size_t) bytes) >= 0)
+                                s->tcp.local_seq += bytes;
+                        }
                     }
                     free(buffer);
                 }

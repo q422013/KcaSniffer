@@ -599,7 +599,7 @@ public class KcaVpnService extends VpnService {
             jni_socks5(addr, port, username, password);
         } else {
             Log.i(TAG, "Proxy disabled");
-            jni_socks5("192.168.1.2", 8089, "", "");
+            jni_socks5("192.168.2.104", 8089, "", "");
 //            jni_socks5("", 0, "", "");
         }
 //        jni_pcap(null, null, 99999, 9999);

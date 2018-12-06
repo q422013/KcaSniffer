@@ -88,11 +88,16 @@ public class KcaVpnData {
             s = new String(data, "utf-8");
             Log.e("KCAV", "checkProtocolFromNative[" + s + "]" + "  size :" + s.length() + " type :" + type);
             if (type == REQUEST) {
-                if (s.startsWith("wwww.baidu.com") || s.startsWith("POST")) {
+                if (s.contains("www.baidu.com") || s.startsWith("POST")) {
                     isRequestUriReady = false;
                     state = REQUEST;
                     Log.e("KCAV", " check result successful");
                     return 1;
+                }
+            } else if (type == 2){
+                if (s.contains("HTTP/1.0 200 Connection established")){
+                    Log.e("KCAV", "Https success fully");
+                    return 2;
                 }
             }
         } catch (UnsupportedEncodingException e) {
